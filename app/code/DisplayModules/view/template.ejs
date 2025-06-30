@@ -1,0 +1,6 @@
+<h2>Main Menu</h2>
+<ul>
+    <% Object.entries(modulesViews).forEach(([key, module]) => { %>
+        <li key="<%= key %>"><a href="<%= module.getRoute() %>"><%= module.getName() %></a></li>
+    <% }); %>
+</ul>

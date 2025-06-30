@@ -1,0 +1,170 @@
+export class PostHashtag {
+    constructor(
+        dbConn,
+        id = null,
+        post_id = null,
+        hashtag_id = null,
+        created_at = null
+    ) {
+        this._id = id;
+        this._post_id = post_id;
+        this._hashtag_id = hashtag_id;
+        this._created_at = created_at;
+        this._dbConn = dbConn;
+    }
+
+    async init(id = null) {
+        try {
+            let currentId = id ? id : this._id;
+            if (!currentId) {
+                throw new Error('Primary Key is not initialized.');
+            }
+            if (!this._dbConn || this._dbConn.status !== true) {
+                throw new Error('DB Connection not established or module disabled');
+            }
+            const result = await this._dbConn.fetch(`
+                SELECT * FROM post_hashtags WHERE id = $1
+                `, [currentId]);
+            if (!result?.data || !Array.isArray(result?.data) || result?.data?.length < 1) {
+                throw new Error('No valid data found with id (pk) : ', currentId);
+            }
+            this._id = currentId;
+            this._post_id = result?.data?.[0]?.post_id;
+            this._hashtag_id = result?.data?.[0]?.hashtag_id;
+            this._created_at = result?.data?.[0]?.created_at;
+
+        } catch (error) {
+            console.error('Failed to initialize PostHashtag model. Error(s)', error);
+        }
+    }
+
+    async getData() {
+        try {
+            if (
+                !this._id ||
+                !this._post_id ||
+                !this._hashtag_id
+            ) throw new Error('Data is not initialized');
+            return {
+                id: this._id,
+                post_id: this._post_id,
+                hashtag_id: this._hashtag_id,
+                created_at: this._created_at
+            }
+
+        } catch (error) {
+            console.error('Failed to get data. Error(s): ', error);
+            return null;
+        }
+    }
+
+    async create(data) {
+        try {
+            if (!this._dbConn || this._dbConn.status !== true) {
+                throw new Error('DB Connection not established or module disabled');
+            }
+            for (const key in data) {
+                if (key !== 'post_id' && key !== 'hashtag_id') {
+                    throw new Error(`Invalid column field "${key}"`);
+                }
+            }
+            const result = await this._dbConn.client.query(`
+                INSERT INTO post_hashtags(post_id, hashtag_id) VALUES($1, $2) RETURNING *;
+                `, [data?.post_id, data?.hashtag_id]);
+            if (!result || !result?.rows?.[0]) {
+                throw new Error('Failed to get created data');
+            }
+            return result?.rows?.[0];
+        } catch (error) {
+            console.error('Failed to create new record. Error(s): ', error);
+            return null;
+        }
+    }
+
+    async delete() {
+        try {
+            if (!this._dbConn || this._dbConn.status !== true) {
+                throw new Error('DB Connection not established or module disabled');
+            }
+            if (!this._id) {
+                throw new Error('Missing or invalid primary key identified');
+            }
+            const result = await this._dbConn.client.query(`DELETE FROM post_hashtags WHERE id = $1 RETURNING *`, [this._id]);
+            if (!result?.rows || !result?.rows?.[0]) {
+                throw new Error('Record not found for deletion');
+            }
+            return true;
+        } catch (error) {
+            console.error('Failed to delete record');
+            return false;
+        }
+    }
+}
+
+export class PostHashtagList {
+    constructor(dbConn) {
+        this.data = null;
+        this.dbConn = dbConn;
+    }
+
+    async init() {
+        try {
+            this.data = [];
+            if (!this.dbConn || this.dbConn.status !== true) {
+                throw new Error('DB Connection not established or module disabled');
+            }
+
+            const result = await this.dbConn.fetch('SELECT * FROM post_hashtags');
+            if (!result?.data || !Array.isArray(result?.data)) {
+                throw new Error('SQL error occurred when fetching data');
+            }
+            result?.data?.map((row) => {
+                this.data.push(
+                    new PostHashtag(this.dbConn, row?.id, row?.post_id, row?.hashtag_id, row?.created_at)
+                );
+            });
+
+        } catch (error) {
+            console.error('PostHashtagList init failed. Error(s): ', error);
+        }
+    }
+
+    async getAllData() {
+        try {
+            if (!this.data) {
+                throw new Error('Data not initialized');
+            }
+            const retVal = [];
+            for (const postHashtag of this.data) {
+                retVal.push(await postHashtag?.getData());
+            }
+            return retVal;
+
+        } catch (error) {
+            console.error('Failed to fetch all data. Error(s): ', error);
+            return null;
+        }
+    }
+
+    async getDataByID(id) {
+        try {
+            if (!this.data || !Array.isArray(this.data)) {
+                throw new Error('Data not initialized');
+            }
+            let retVal = null;
+            for (let i = 0; i < this.data.length; i++) {
+                if (this.data[i]._id === id) {
+                    retVal = this.data[i];
+                    break;
+                }
+            }
+            if (!retVal) {
+                throw new Error(`No data found for id "${id}"`);
+            }
+            return retVal;
+        } catch (error) {
+            console.error('Failed to fetch data. Error(s): ', error);
+            return null;
+        }
+    }
+}
