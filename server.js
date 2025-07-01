@@ -16,13 +16,6 @@ const PORT = 8080;
 // Create HTTP server to share between Express and Socket.IO
 const server = createServer(app);
 
-// DEBUG: Log environment variables
-console.log('=== CORS DEBUG INFO ===');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('CLIENT_URL raw:', JSON.stringify(process.env.CLIENT_URL));
-console.log('CLIENT_URL type:', typeof process.env.CLIENT_URL);
-console.log('CLIENT_URL length:', process.env.CLIENT_URL?.length);
-
 // Clean the CLIENT_URL to remove any potential quotes or whitespace
 let clientUrl = process.env.CLIENT_URL;
 if (clientUrl) {
@@ -33,14 +26,13 @@ if (clientUrl) {
 }
 
 const finalClientUrl = clientUrl || "https://codebycisse-social-production.up.railway.app";
-console.log('Final CLIENT_URL:', JSON.stringify(finalClientUrl));
-console.log('======================');
 
-// Define allowed origins more explicitly
+// Define allowed origins
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://codebycisse-social-production.up.railway.app'
+  'https://codebycisse-social-production.up.railway.app',
+  'https://codebycisse-social-server-production.up.railway.app' // Backend UI
 ];
 
 // Add the cleaned CLIENT_URL if it's different
@@ -48,20 +40,16 @@ if (finalClientUrl && !allowedOrigins.includes(finalClientUrl)) {
   allowedOrigins.push(finalClientUrl);
 }
 
-console.log('Allowed origins:', allowedOrigins);
-
-// Initialize Socket.IO with better CORS handling
+// Initialize Socket.IO
 const io = new Server(server, {
   cors: {
     origin: function (origin, callback) {
-      console.log('Socket.IO CORS check for origin:', origin);
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       } else {
-        console.log('Socket.IO CORS rejected origin:', origin);
         return callback(new Error('Not allowed by CORS'));
       }
     },
@@ -71,23 +59,17 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 
-// Enhanced CORS configuration with debugging
+// CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    console.log('Express CORS check for origin:', origin);
-    console.log('Request from origin:', origin, 'allowed origins:', allowedOrigins);
-    
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
-      console.log('No origin - allowing request');
       return callback(null, true);
     }
     
     if (allowedOrigins.includes(origin)) {
-      console.log('Origin allowed:', origin);
       return callback(null, true);
     } else {
-      console.log('Origin rejected:', origin);
       return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
     }
   },
@@ -229,204 +211,176 @@ const moduleManager = new ModuleManager();
 await moduleManager.initModules();
 
 for (let pk in await moduleManager.getModules()) {
-  const namespace = await moduleManager.getNamespace(pk);
-  if (namespace.error !== '') {
-    console.error(`Error found in namespace: ${namespace.error}. Skipping modules in that namespace`);
+  try {
+    const namespace = await moduleManager.getNamespace(pk);
+    if (namespace.error !== '') {
+      console.error(`Error found in namespace: ${namespace.error}. Skipping modules in that namespace`);
+      continue;
+    }
+    const modules = namespace.namespaceData._modules;
+    for (let module in modules) {
+      
+      if (modules[module]._publicRoute !== '') {
+        app.get(`/${modules[module]._publicRoute}`, async (req, res) => {
+          const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
+
+          try {
+            const { default: Controller } = await import(controllerPath);
+            const result = await Controller(req, res);
+
+            // Only send JSON response if headers haven't been sent yet
+            // (meaning the controller didn't handle the response)
+            if (!res.headersSent) {
+              // Handle structured response objects (for newer controllers)
+              if (result?.type === 'redirect') {
+                return res.redirect(302, result.url);
+              } else if (result?.type === 'html') {
+                return res.send(result.content);
+              } else if (result?.type === 'json') {
+                return res.json(result.data);
+              } else {
+                // Fallback - send error info
+                return res.json({
+                  module: module,
+                  module_info: modules[module],
+                  error: result?.error || 'Controller completed without sending response'
+                });
+              }
+            }
+            // If headers were sent, the controller handled the response directly
+
+          } catch (error) {
+            console.error('Route handler error:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                module: module,
+                module_info: modules[module],
+                error: 'Internal server error. Check logs.'
+              });
+            }
+          }
+        });
+      }
+      if (modules[module]?._postRoute !== undefined && modules[module]?._postRoute !== null && modules[module]?._postRoute !== '') {
+
+        app.post(`/${modules[module]?._postRoute}`, async (req, res) => {
+          try {
+            const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
+            const { default: Controller } = await import(controllerPath);
+            const result = await Controller(req, res);
+
+            if (!res.headersSent) {
+              if (result?.type === 'redirect') {
+                return res.redirect(302, result.url);
+              } else if (result?.type === 'html') {
+                return res.send(result.content);
+              } else if (result?.type === 'json') {
+                return res.json(result.data);
+              } else {
+                return res.json({
+                  module: module,
+                  module_info: modules[module],
+                  error: result?.error || 'Controller completed without sending response'
+                });
+              }
+            }
+          } catch (error) {
+            console.error('POST Route handler error:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                module: module,
+                module_info: modules[module],
+                error: 'Internal server error. Check logs.'
+              });
+            }
+          }
+        });
+      }
+      if (modules[module]?._putRoute !== undefined && modules[module]?._putRoute !== null && modules[module]?._putRoute !== '') {
+        app.put(`/${modules[module]?._putRoute}`, async (req, res) => {
+          try {
+            const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
+            const { default: Controller } = await import(controllerPath);
+            const result = await Controller(req, res);
+
+            if (!res.headersSent) {
+              // Handle structured response objects (for newer controllers)
+              if (result?.type === 'redirect') {
+                return res.redirect(302, result.url);
+              } else if (result?.type === 'html') {
+                return res.send(result.content);
+              } else if (result?.type === 'json') {
+                return res.json(result.data);
+              } else {
+                // Fallback - send error info
+                return res.json({
+                  module: module,
+                  module_info: modules[module],
+                  error: result?.error || 'Controller completed without sending response'
+                });
+              }
+            }
+            // If headers were sent, the controller handled the response directly
+
+          } catch (error) {
+            console.error('PUT Route handler error:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                module: module,
+                module_info: modules[module],
+                error: 'Internal server error. Check logs.'
+              });
+            }
+          }
+        });
+      }
+
+      if (modules[module]?._deleteRoute !== undefined && modules[module]?._deleteRoute !== null && modules[module]?._deleteRoute !== '') {
+        app.delete(`/${modules[module]?._deleteRoute}`, async (req, res) => {
+          try {
+            const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
+            const { default: Controller } = await import(controllerPath);
+            const result = await Controller(req, res);
+
+            if (!res.headersSent) {
+              // Handle structured response objects (for newer controllers)
+              if (result?.type === 'redirect') {
+                return res.redirect(302, result.url);
+              } else if (result?.type === 'html') {
+                return res.send(result.content);
+              } else if (result?.type === 'json') {
+                return res.json(result.data);
+              } else {
+                // Fallback - send error info
+                return res.json({
+                  module: module,
+                  module_info: modules[module],
+                  error: result?.error || 'Controller completed without sending response'
+                });
+              }
+            }
+            // If headers were sent, the controller handled the response directly
+
+          } catch (error) {
+            console.error('DELETE Route handler error:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                module: module,
+                module_info: modules[module],
+                error: 'Internal server error. Check logs.'
+              });
+            }
+          }
+        });
+      }
+    }
+  } catch (error) {
+    console.error(`Error processing namespace ${pk}:`, error);
     continue;
   }
-  const modules = namespace.namespaceData._modules;
-  for (let module in modules) {
-    
-    if (modules[module]._publicRoute !== '') {
-      app.get(`/${modules[module]._publicRoute}`, async (req, res) => {
-        const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
-
-        console.log('GET Request: ', modules[module]._publicRoute)
-        if (req?.params) {
-          console.log('- Params: ', req?.params);
-        }
-        if (req?.body) {
-          console.log('- Request Body: ', req?.body);
-        }
-
-        try {
-          const { default: Controller } = await import(controllerPath);
-          const result = await Controller(req, res);
-
-          // Only send JSON response if headers haven't been sent yet
-          // (meaning the controller didn't handle the response)
-          if (!res.headersSent) {
-            // Handle structured response objects (for newer controllers)
-            if (result?.type === 'redirect') {
-              return res.redirect(302, result.url);
-            } else if (result?.type === 'html') {
-              return res.send(result.content);
-            } else if (result?.type === 'json') {
-              return res.json(result.data);
-            } else {
-              // Fallback - send error info
-              return res.json({
-                module: module,
-                module_info: modules[module],
-                error: result?.error || 'Controller completed without sending response'
-              });
-            }
-          }
-          // If headers were sent, the controller handled the response directly
-
-        } catch (error) {
-          console.error('Route handler error:', error);
-          if (!res.headersSent) {
-            res.status(500).json({
-              module: module,
-              module_info: modules[module],
-              error: 'Internal server error. Check logs.'
-            });
-          }
-        }
-      });
-    }
-    if (modules[module]?._postRoute !== undefined && modules[module]?._postRoute !== null && modules[module]?._postRoute !== '') {
-
-      app.post(`/${modules[module]?._postRoute}`, async (req, res) => {
-        console.log('POST Request: ', modules[module]._postRoute);
-        if (req?.params) {
-          console.log('- Params: ', req?.params);
-        }
-        if (req?.body) {
-          console.log('- Request Body: ', req?.body);
-        }
-
-        try {
-          const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
-          const { default: Controller } = await import(controllerPath);
-          const result = await Controller(req, res);
-
-          if (!res.headersSent) {
-            if (result?.type === 'redirect') {
-              return res.redirect(302, result.url);
-            } else if (result?.type === 'html') {
-              return res.send(result.content);
-            } else if (result?.type === 'json') {
-              return res.json(result.data);
-            } else {
-              return res.json({
-                module: module,
-                module_info: modules[module],
-                error: result?.error || 'Controller completed without sending response'
-              });
-            }
-          }
-        } catch (error) {
-          console.error('POST Route handler error:', error);
-          if (!res.headersSent) {
-            res.status(500).json({
-              module: module,
-              module_info: modules[module],
-              error: 'Internal server error. Check logs.'
-            });
-          }
-        }
-      });
-    }
-    if (modules[module]?._putRoute !== undefined && modules[module]?._putRoute !== null && modules[module]?._putRoute !== '') {
-      app.put(`/${modules[module]?._putRoute}`, async (req, res) => {
-        console.log('PUT Request: ', modules[module]._putRoute);
-        if (req?.params) {
-          console.log('- Params: ', req?.params);
-        }
-        if (req?.body) {
-          console.log('- Request Body: ', req?.body);
-        }
-
-        try {
-          const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
-          const { default: Controller } = await import(controllerPath);
-          const result = await Controller(req, res);
-
-          if (!res.headersSent) {
-            // Handle structured response objects (for newer controllers)
-            if (result?.type === 'redirect') {
-              return res.redirect(302, result.url);
-            } else if (result?.type === 'html') {
-              return res.send(result.content);
-            } else if (result?.type === 'json') {
-              return res.json(result.data);
-            } else {
-              // Fallback - send error info
-              return res.json({
-                module: module,
-                module_info: modules[module],
-                error: result?.error || 'Controller completed without sending response'
-              });
-            }
-          }
-          // If headers were sent, the controller handled the response directly
-
-        } catch (error) {
-          console.error('PUT Route handler error:', error);
-          if (!res.headersSent) {
-            res.status(500).json({
-              module: module,
-              module_info: modules[module],
-              error: 'Internal server error. Check logs.'
-            });
-          }
-        }
-      });
-    }
-
-    if (modules[module]?._deleteRoute !== undefined && modules[module]?._deleteRoute !== null && modules[module]?._deleteRoute !== '') {
-      app.delete(`/${modules[module]?._deleteRoute}`, async (req, res) => {
-        console.log('DELETE Request: ', modules[module]._deleteRoute);
-        if (req?.params) {
-          console.log('- Params: ', req?.params);
-        }
-        if (req?.body) {
-          console.log('- Request Body: ', req?.body);
-        }
-
-        try {
-          const controllerPath = `file://${modules[module]._controller.replace(/\\/g, '/')}`;
-          const { default: Controller } = await import(controllerPath);
-          const result = await Controller(req, res);
-
-          if (!res.headersSent) {
-            // Handle structured response objects (for newer controllers)
-            if (result?.type === 'redirect') {
-              return res.redirect(302, result.url);
-            } else if (result?.type === 'html') {
-              return res.send(result.content);
-            } else if (result?.type === 'json') {
-              return res.json(result.data);
-            } else {
-              // Fallback - send error info
-              return res.json({
-                module: module,
-                module_info: modules[module],
-                error: result?.error || 'Controller completed without sending response'
-              });
-            }
-          }
-          // If headers were sent, the controller handled the response directly
-
-        } catch (error) {
-          console.error('DELETE Route handler error:', error);
-          if (!res.headersSent) {
-            res.status(500).json({
-              module: module,
-              module_info: modules[module],
-              error: 'Internal server error. Check logs.'
-            });
-          }
-        }
-      });
-    }
-  }
-
 }
+
 app.get("/", async (req, res) => {
-  console.log('Accessing root. Need to redirect');
   res.redirect(302, '/modules');
 });
 
