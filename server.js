@@ -27,7 +27,7 @@ const io = new Server(server, {
 });
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin: process.env.CLIENT_URL || "https://codebycisse-social-production.up.railway.app",
   credentials: true
 }));
 app.use(express.json());
