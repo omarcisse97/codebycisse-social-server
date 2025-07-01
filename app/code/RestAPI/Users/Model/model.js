@@ -76,7 +76,7 @@ export class User {
             if (!this._id || !this._email || !this._full_name) {
                 console.log('Not initialized so here is class -> ', this);
                 throw new Error('Data is not initialized');
-                
+
             }
             return {
                 id: this._id,
@@ -104,15 +104,15 @@ export class User {
     // Generate username from full name
     _generateUsername(fullName) {
         const randomNum = Math.floor(Math.random() * 9000) + 1000; // 1000-9999
-        
+
         if (!fullName || !fullName.includes(' ')) {
             return `guest_${randomNum}`;
         }
-        
+
         const parts = fullName.split(' ');
         const firstInitial = parts[0][0].toLowerCase();
         const lastName = parts.slice(1).join('').toLowerCase();
-        
+
         return `${firstInitial}${lastName}_${randomNum}`;
     }
 
@@ -121,7 +121,7 @@ export class User {
             if (!this._dbConn || this._dbConn.status !== true) {
                 throw new Error('DB Connection not established or module disabled');
             }
-            const validFields = ['id','email', 'username', 'full_name', 'bio', 'website', 'location', 'phone', 'birth_date', 'is_verified', 'is_private', 'is_active'];
+            const validFields = ['id', 'email', 'username', 'full_name', 'bio', 'website', 'location', 'phone', 'birth_date', 'is_verified', 'is_private', 'is_active'];
             for (const key in data) {
                 if (!validFields.includes(key)) {
                     throw new Error(`Invalid column field "${key}"`);
@@ -154,6 +154,13 @@ export class User {
             }
             if (!this._id) {
                 throw new Error('Missing or invalid primary key identified');
+            }
+            const userList = new UserList(this._dbConn);
+            await userList.init();
+            if('username' in data){
+                if(userList.usernameExists(data.username) === true){
+                    throw new Error('Username already exist');
+                }
             }
             console.log('Data to update -> ', data);
             const validFields = ['email', 'username', 'full_name', 'bio', 'website', 'location', 'phone', 'birth_date', 'is_verified', 'is_private', 'is_active', 'gender'];
@@ -235,7 +242,22 @@ export class UserList {
             console.error('UserList init failed. Error(s): ', error);
         }
     }
+    usernameExists(username) {
+        try {
+            if (!this.data || !Array.isArray(this.data)) {
+                throw new Error('Data is not initialized yet');
+            }
 
+            for (let i = 0; i < this.data?.length; i++) {
+                if (this.data[i]?._username === username) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (error) {
+            console.error('Failed to check if username exists. Error(s): ', error);
+        }
+    }
     async getAllData() {
         try {
             if (!this.data) {
