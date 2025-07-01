@@ -16,20 +16,86 @@ const PORT = 8080;
 // Create HTTP server to share between Express and Socket.IO
 const server = createServer(app);
 
-// Initialize Socket.IO
+// DEBUG: Log environment variables
+console.log('=== CORS DEBUG INFO ===');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('CLIENT_URL raw:', JSON.stringify(process.env.CLIENT_URL));
+console.log('CLIENT_URL type:', typeof process.env.CLIENT_URL);
+console.log('CLIENT_URL length:', process.env.CLIENT_URL?.length);
+
+// Clean the CLIENT_URL to remove any potential quotes or whitespace
+let clientUrl = process.env.CLIENT_URL;
+if (clientUrl) {
+  // Remove quotes if they exist
+  clientUrl = clientUrl.replace(/^["']|["']$/g, '');
+  // Trim whitespace
+  clientUrl = clientUrl.trim();
+}
+
+const finalClientUrl = clientUrl || "https://codebycisse-social-production.up.railway.app";
+console.log('Final CLIENT_URL:', JSON.stringify(finalClientUrl));
+console.log('======================');
+
+// Define allowed origins more explicitly
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://codebycisse-social-production.up.railway.app'
+];
+
+// Add the cleaned CLIENT_URL if it's different
+if (finalClientUrl && !allowedOrigins.includes(finalClientUrl)) {
+  allowedOrigins.push(finalClientUrl);
+}
+
+console.log('Allowed origins:', allowedOrigins);
+
+// Initialize Socket.IO with better CORS handling
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "https://codebycisse-social-production.up.railway.app", // Your React app URL
+    origin: function (origin, callback) {
+      console.log('Socket.IO CORS check for origin:', origin);
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        console.log('Socket.IO CORS rejected origin:', origin);
+        return callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
   transports: ['websocket', 'polling']
 });
 
+// Enhanced CORS configuration with debugging
 app.use(cors({
-  origin: process.env.CLIENT_URL || "https://codebycisse-social-production.up.railway.app",
-  credentials: true
+  origin: function (origin, callback) {
+    console.log('Express CORS check for origin:', origin);
+    console.log('Request from origin:', origin, 'allowed origins:', allowedOrigins);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('No origin - allowing request');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('Origin allowed:', origin);
+      return callback(null, true);
+    } else {
+      console.log('Origin rejected:', origin);
+      return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
@@ -155,7 +221,7 @@ const socketHelpers = {
 global.socketHelpers = socketHelpers;
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(__dirname);
 
 app.use(express.static(path.join(__dirname, 'app', 'public')));
 
