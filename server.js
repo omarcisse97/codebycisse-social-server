@@ -19,7 +19,7 @@ const server = createServer(app);
 // Initialize Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5173", // Your React app URL
+    origin: process.env.CLIENT_URL || "https://codebycisse-social-production.up.railway.app", // Your React app URL
     methods: ["GET", "POST"],
     credentials: true
   },
