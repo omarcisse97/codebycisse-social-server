@@ -14,7 +14,8 @@ export class User {
         is_private = false,
         is_active = true,
         created_at = null,
-        updated_at = null
+        updated_at = null,
+        gender = null
     ) {
         this._id = id;
         this._email = email;
@@ -31,6 +32,7 @@ export class User {
         this._created_at = created_at;
         this._updated_at = updated_at;
         this._dbConn = dbConn;
+        this._gender = gender
     }
 
     async init(id = null) {
@@ -63,6 +65,7 @@ export class User {
             this._is_active = userData.is_active;
             this._created_at = userData.created_at;
             this._updated_at = userData.updated_at;
+            this._gender = userData.gender;
         } catch (error) {
             console.error('Failed to initialize User model. Error(s)', error);
         }
@@ -89,7 +92,8 @@ export class User {
                 is_private: this._is_private,
                 is_active: this._is_active,
                 created_at: this._created_at,
-                updated_at: this._updated_at
+                updated_at: this._updated_at,
+                gender: this._gender
             }
         } catch (error) {
             console.error('Failed to get data. Error(s): ', error);
@@ -151,7 +155,8 @@ export class User {
             if (!this._id) {
                 throw new Error('Missing or invalid primary key identified');
             }
-            const validFields = ['email', 'username', 'full_name', 'bio', 'website', 'location', 'phone', 'birth_date', 'is_verified', 'is_private', 'is_active'];
+            console.log('Data to update -> ', data);
+            const validFields = ['email', 'username', 'full_name', 'bio', 'website', 'location', 'phone', 'birth_date', 'is_verified', 'is_private', 'is_active', 'gender'];
             const colsArr = [];
             const dataArr = [];
             for (const key in data) {
@@ -222,7 +227,7 @@ export class UserList {
             }
             result?.data?.map((row) => {
                 this.data.push(
-                    new User(this.dbConn, row?.id, row?.email, row?.username, row?.full_name, row?.bio, row?.website, row?.location, row?.phone, row?.birth_date, row?.is_verified, row?.is_private, row?.is_active, row?.created_at, row?.updated_at)
+                    new User(this.dbConn, row?.id, row?.email, row?.username, row?.full_name, row?.bio, row?.website, row?.location, row?.phone, row?.birth_date, row?.is_verified, row?.is_private, row?.is_active, row?.created_at, row?.updated_at, row?.gender)
                 );
             });
             console.log('Initialized all data for users -> ', this.data);
