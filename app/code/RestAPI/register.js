@@ -22,6 +22,13 @@ const Registration = () => {
                 _postRoute: 'api/keys/update/:type/:handle',
                 _displayInModules: "false"
             },
+            Search: {
+                _moduleName: 'Search',
+                _modulePath: path.join(__dirname, 'Search'),
+                _controller: path.join(__dirname, 'Search', 'Controller', 'controller.js'),
+                _publicRoute: 'api/search/:field/:limit',          
+                _displayInModules: "false"
+            },
             Users: {
                 _moduleName: 'Users',
                 _modulePath: path.join(__dirname, 'Users'),
