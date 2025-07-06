@@ -1,8 +1,8 @@
 import { PSQL } from '../Model/model.js';
 import { appConfig } from '../../../../util/config.js';
 
-const Controller = () => {
-    const dbConn = new PSQL();
+const Controller = (mode = 'client') => {
+    const dbConn = new PSQL(mode);
     dbConn.createConnection(appConfig().DATABASES?.PSQL);
     return dbConn;
 };

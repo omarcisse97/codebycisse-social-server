@@ -11,7 +11,7 @@ const requireAdminLogin = (request, response) => {
 };
 
 
-const Controller = async (request = null, resolution = null) => {
+const Controller = async (request = null, resolution = null, dbConn = null,  appGlobal = null) => {
   try {
     const checkLogin = requireAdminLogin(request, resolution);
     if(checkLogin !== null){

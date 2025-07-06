@@ -5,7 +5,7 @@ import { DbConn } from "./configDB.js";
 import { Admins } from "../Model/model.js";
 
 
-const Controller = async (request = null, resolution = null) => {
+const Controller = async (request = null, resolution = null, dbConn = null,  appGlobal = null) => {
   try {
     const method = request?.method;
     const body = request?.body;

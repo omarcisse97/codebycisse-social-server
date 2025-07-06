@@ -11,7 +11,7 @@ const requireAdminLogin = (request, response) => {
   return null;
 };
 
-const Controller = async (request = null, resolution = null) => {
+const Controller = async (request = null, resolution = null, dbConn = null, appGlobal = null) => {
   try {
     const checkLogin = requireAdminLogin(request, resolution);
     if (checkLogin !== null) {
@@ -26,20 +26,18 @@ const Controller = async (request = null, resolution = null) => {
     if (!resolution) {
       throw new Error('Resolution not Found');
     }
-    const dbConn = await DbConn();
 
-    if (dbConn?.error !== '') {
+    if (!dbConn) {
+      throw new Error('Db connection is crucial for module');
+    }
+    
+    if (dbConn?.getErrors().length > 0 || dbConn?.status !== true) {
       throw new Error(`Database Connection Error: An error occurred while connecting to the database.
             Please contact your local administrator as soon as possible.`);
     }
 
-    await dbConn.module.connect();
-    if (dbConn.module.getErrors().length > 0) {
-      throw new Error('Database Connection Error: Server could not establish connection with the database. Please contact your local administrator as soon as possible');
-    }
 
-
-    const database = new SQLData(dbConn.module);
+    const database = new SQLData(dbConn);
     await database.init();
     const tableName = params?.tableName || null;
     if (!tableName) {
@@ -142,7 +140,7 @@ const Controller = async (request = null, resolution = null) => {
           }
 
         ]
-        pageFactory.module.setHeader(subNavigation, {...request.session.admin});
+        pageFactory.module.setHeader(subNavigation, { ...request.session.admin });
         pageFactory.module.setFooter();
         pageFactory.module.addContent(`
       <div class="container mt-4">
@@ -167,7 +165,7 @@ const Controller = async (request = null, resolution = null) => {
       </div>
     `);
         pageFactory.module.save();
-        dbConn.module.disconnect();
+        
         if (!resolution) {
           throw new Error('Resolution not found. Cannot display page');
         }

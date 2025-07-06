@@ -11,7 +11,7 @@ const requireAdminLogin = (request, response) => {
     return null;
 };
 
-const Controller = async (request = null, resolution = null) => {
+const Controller = async (request = null, resolution = null, dbConn = null,  appGlobal = null) => {
     try {
         const checkLogin = requireAdminLogin(request, resolution);
     if(checkLogin !== null){
@@ -23,10 +23,12 @@ const Controller = async (request = null, resolution = null) => {
         if (method !== 'GET') {
             throw new Error('Request method does not match module');
         }
-
-        const dbConn = await DbConn();
         const pageFactory = await PageFactory();
-        if (dbConn?.error !== '') {
+        if(!dbConn){
+            throw new Error('Db connection is crucial for module');
+        }
+       
+        if (dbConn?.getErrors().length > 0|| dbConn?.status !== true) {
             throw new Error(`Database Connection Error: An error occurred while connecting to the database.
             Please contact your local administrator as soon as possible.`);
         }
@@ -34,13 +36,10 @@ const Controller = async (request = null, resolution = null) => {
         if (!pageFactory?.module) {
             throw new Error('Page Factory Error: We could not find or use Page Factory module to create a template');
         }
-
-        await dbConn.module.connect();
-        if (dbConn.module.getErrors().length > 0) {
-            throw new Error('Database Connection Error: Server could not establish connection with the database. Please contact your local administrator as soon as possible');
-        }
         
-        const database = new SQLData(dbConn.module);
+        
+        
+        const database = new SQLData(dbConn);
         await database.init();
         pageFactory.module.setTitle('Database Management');
         const subNavigation = [{ url: `${appConfig().SERVER}/database-management`, title: 'Database Management', active: 'active' }]
@@ -65,7 +64,7 @@ const Controller = async (request = null, resolution = null) => {
                             `);
 
         pageFactory.module.save();
-        dbConn.module.disconnect();
+        
         if (!resolution) {
             throw new Error('Resolution not found. Cannot display page');
         }

@@ -10,6 +10,7 @@ export class ApiKeys {
         this.dbConn = dbConn;
         this.data = null;
     }
+    
     async init() {
         console.log('Initializing Data ...');
         console.log('------------------------------------------------------------------');
@@ -26,12 +27,14 @@ export class ApiKeys {
             if (!result || !result?.data || !Array.isArray(result?.data)) {
                 throw new Error('Failed to fetch api keys. Query or SQL issue');
             }
+            
             for (const key of result.data) {
                 if (isExpired(key?.expires_at) && key?.is_active === true) {
                     key.is_active = false;
-                    await this.dbConn.client.query(`
-                        UPDATE api_keys SET is_active = '${key.is_active}' WHERE id = '${key.id}';
-                        `);
+                    // ✅ FIXED: Use parameterized query
+                    await this.dbConn.fetch(`
+                        UPDATE api_keys SET is_active = $1 WHERE id = $2;
+                        `, [key.is_active, key.id]);
                 }
                 temp[key.id] = { ...key };
             }
@@ -44,6 +47,7 @@ export class ApiKeys {
             console.error('Failed to Initialize data. Error(s): ', error);
         }
     }
+    
     async getApiById(id) {
         console.log('Fetching Api by Id  ...');
         console.log('------------------------------------------------------------------');
@@ -64,6 +68,7 @@ export class ApiKeys {
             return { data: null, error: error }
         }
     }
+    
     async getApiByKey(key) {
         console.log('Fetching Api by Key  ...');
         console.log('------------------------------------------------------------------');
@@ -95,6 +100,7 @@ export class ApiKeys {
             return { data: null, error: error };
         }
     }
+    
     getAllKeys() {
         console.log('Fetching all Api Keys  ...');
         console.log('------------------------------------------------------------------');
@@ -115,6 +121,7 @@ export class ApiKeys {
             return { data: null, error: error };
         }
     }
+    
     async refresh() {
         console.log('Refreshing data ...');
         console.log('------------------------------------------------------------------');
@@ -131,6 +138,7 @@ export class ApiKeys {
             console.log('------------------------------------------------------------------');
         }
     }
+    
     async GenerateApiKey(data) {
         console.log('Generating new API Key ...');
         console.log('------------------------------------------------------------------');
@@ -147,18 +155,22 @@ export class ApiKeys {
             }
             console.log(`- Generated API key: "${tempKey}"`);
             console.log('- Attempting to save API key');
-            const result = await this.dbConn.client.query(`
-                                INSERT INTO api_keys(label, key, created_at, expires_at, is_active, access)
-                                VALUES (
-                                '${data?.label}', 
-                                '${tempKey}', 
-                                '${new Date().toISOString().split('T')[0]}',
-                                '${data?.expires_at}',
-                                '${data?.is_active}',
-                                '${data?.access}'
-                                ) RETURNING *;
-                            `);
-            if (!result?.rows || !Array.isArray(result?.rows) || result?.rows?.length < 1) {
+            
+            // ✅ FIXED: Use parameterized query for security and pool compatibility
+            const result = await this.dbConn.fetch(`
+                INSERT INTO api_keys(label, key, created_at, expires_at, is_active, access)
+                VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;
+            `, [
+                data?.label,
+                tempKey,
+                new Date().toISOString().split('T')[0],
+                data?.expires_at,
+                data?.is_active,
+                data?.access
+            ]);
+            
+            // ✅ FIXED: Check result.data instead of result.rows
+            if (!result?.data || !Array.isArray(result?.data) || result?.data?.length < 1) {
                 throw new Error('SQL command failed.');
             }
             console.log('Successfully saved the API key');
@@ -171,8 +183,8 @@ export class ApiKeys {
             console.log('------------------------------------------------------------------');
             return false;
         }
-
     }
+    
     async toggleActive(id) {
         console.log('Updating Api status ...');
         console.log('------------------------------------------------------------------');
@@ -189,9 +201,11 @@ export class ApiKeys {
             }
             let inputData = data?.data?.is_active === true ? false : true;
 
-            await this.dbConn.client.query(`
-                UPDATE api_keys SET is_active = '${inputData}' WHERE id = '${id}';
-                `);
+            // ✅ FIXED: Use parameterized query
+            await this.dbConn.fetch(`
+                UPDATE api_keys SET is_active = $1 WHERE id = $2;
+            `, [inputData, id]);
+            
             console.log('Successfully updated API key status');
             console.log();
             console.log('------------------------------------------------------------------');
@@ -204,6 +218,7 @@ export class ApiKeys {
             return false;
         }
     }
+    
     async deleteApi(id) {
         console.log('Removing API key ...');
         console.log('------------------------------------------------------------------');
@@ -216,9 +231,12 @@ export class ApiKeys {
             if (!data?.data) {
                 throw new Error('Failed to fetch api by id');
             }
-            const result = await this.dbConn.client.query(`
-                DELETE FROM api_keys WHERE id = '${id}';
-                `);
+            
+            // ✅ FIXED: Use parameterized query
+            const result = await this.dbConn.fetch(`
+                DELETE FROM api_keys WHERE id = $1;
+            `, [id]);
+            
             console.log('Successfully removed API key');
             console.log();
             console.log('------------------------------------------------------------------');

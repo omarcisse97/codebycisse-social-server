@@ -11,7 +11,7 @@ const requireAdminLogin = (request, response) => {
   return null;
 };
 
-const Controller = async (request = null, resolution = null) => {
+const Controller = async (request = null, resolution = null, dbConn = null, appGlobal = null) => {
   const checkLogin = requireAdminLogin(request, resolution);
   if (checkLogin !== null) {
     return checkLogin;
@@ -23,47 +23,48 @@ const Controller = async (request = null, resolution = null) => {
     if (method !== 'GET') {
       throw new Error('Request method does not match module');
     }
-    const dbConn = await DbConn();
-    const pageFactory = await PageFactory();
-    if (dbConn?.error !== '') {
-      throw new Error(`Database Connection Error: An error occurred while connecting to the database.
-    Please contact your local administrator as soon as possible.`);
+    if (!dbConn) {
+      throw new Error('Db connection is crucial for module');
     }
-    
+   
+    if (dbConn?.getErrors().length > 0 || dbConn?.status !== true) {
+      throw new Error(`Database Connection Error: An error occurred while connecting to the database.
+            Please contact your local administrator as soon as possible.`);
+    }
+    const pageFactory = await PageFactory();
+
+
     if (!pageFactory?.module) {
       throw new Error('Page Factory Error: We could not find or use Page Factory module to create a template');
     }
 
-    await dbConn.module.connect();
-    if (dbConn.module.getErrors().length > 0) {
-      throw new Error('Database Connection Error: Server could not establish connection with the database. Please contact your local administrator as soon as possible');
-    }
-    
+
+
     const param = params?.tableName || null;
     if (!param) {
       throw new Error('Module not found. View details in the logs.');
     }
-    
+
     const title = `${param[0]?.toUpperCase()}${param?.substring(1, param?.length)}`
     const subNavigation = [
       { url: `${appConfig().SERVER}/database-management`, title: 'Database Management', active: '' },
       { url: `${appConfig().SERVER}/${param}`, title: title, active: 'active' }
     ]
 
-    const database = new SQLData(dbConn?.module);
-    
+    const database = new SQLData(dbConn);
+
     await database?.init();
-    
+
     await database?.sortTableByPrimaryKey(param);
-    
+
     const currentTable = database?.getTableByTableName(param)?.data || null;
     if (!currentTable) {
       throw new Error(`We could not find table ${param} table in the database`);
     }
-    
+
 
     pageFactory.module.setTitle(title);
-    pageFactory.module.setHeader({ ...subNavigation }, {...request.session.admin});
+    pageFactory.module.setHeader({ ...subNavigation }, { ...request.session.admin });
     pageFactory.module.setFooter();
     pageFactory.module.addContent(`
           <div class="container my-4">
@@ -129,7 +130,7 @@ const Controller = async (request = null, resolution = null) => {
   </div>
 `);
     pageFactory.module.save();
-    dbConn.module.disconnect();
+   
     if (!resolution) {
       throw new Error('Resolution not found. Cannot display page');
     }

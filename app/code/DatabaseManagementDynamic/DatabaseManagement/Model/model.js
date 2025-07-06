@@ -2,7 +2,6 @@ export class SQLData {
     constructor(dbConn) {
         this.dbConn = dbConn;
         this.tablesSQL = {};
-
     }
 
     async init() {
@@ -32,7 +31,6 @@ export class SQLData {
             const tempTablesSQL = {};
 
             for (const table of tableNames.data) {
-
                 const tableName = table?.table_name;
                 if (!tableName) {
                     console.log('- Cannot find table name for -> ', table);
@@ -42,20 +40,20 @@ export class SQLData {
                 }
                 console.log(`- Loading table "${tableName} ..."`);
 
-                // Keep your original structure: columns as array, rows as array
                 tempTablesSQL[tableName] = {
                     table_name: tableName,
-                    columns: [],  // Array of column names
-                    rows: []      // Array of row data
+                    columns: [],
+                    rows: []
                 };
 
                 try {
+                    // ✅ FIXED: Use parameterized query
                     const columnNames = await this.dbConn.fetch(`
                                         SELECT column_name
                                         FROM information_schema.columns
                                         WHERE table_schema = 'public'
-                                        AND table_name = '${tableName}';
-                                        `);
+                                        AND table_name = $1;
+                                        `, [tableName]);
 
                     if (!Array.isArray(columnNames?.data) || columnNames?.data.length < 1) {
                         console.log(`- No columns found for table "${tableName}"`);
@@ -67,7 +65,7 @@ export class SQLData {
                         if (value?.column_name) {
                             return value?.column_name;
                         }
-                    }).filter(Boolean); // Remove undefined values
+                    }).filter(Boolean);
 
                     if (column_names_temp && Array.isArray(column_names_temp)) {
                         tempTablesSQL[tableName].columns = [...column_names_temp];
@@ -125,7 +123,6 @@ export class SQLData {
                 throw new Error(`Table "${table_name}" does not exist or contains errors. Aborting`);
             }
 
-            // Fixed: columns is an array, so use .includes() directly
             if (!this.tablesSQL[table_name].columns.includes(column_name)) {
                 throw new Error(`Unrecognized column name "${column_name}". Aborting`);
             }
@@ -134,7 +131,6 @@ export class SQLData {
                     SELECT * FROM ${table_name} ORDER BY ${column_name} ${sortType};
                 `);
 
-            // Fixed: Update the rows array with sorted data
             if (retVal?.data && Array.isArray(retVal.data)) {
                 this.tablesSQL[table_name].rows = [...retVal.data];
             }
@@ -170,18 +166,18 @@ export class SQLData {
         console.log('------------------------------------------------------------------');
         if (this?.tablesSQL[table_name] && this.dbConn) {
             try {
+                // ✅ FIXED: Use parameterized query
                 const result = await this.dbConn.fetch(`SELECT a.attname AS column_name
                                                         FROM   pg_index i
                                                         JOIN   pg_attribute a ON a.attrelid = i.indrelid
                                                          AND a.attnum = ANY(i.indkey)
-                                                        WHERE  i.indrelid = '${table_name}'::regclass
-                                                        AND    i.indisprimary;`);
+                                                        WHERE  i.indrelid = $1::regclass
+                                                        AND    i.indisprimary;`, [table_name]);
 
-                if (result?.error || result?.errors) {
-                    throw new Error(result?.error || result?.errors || 'An issue occured while processing the data');
+                if (result?.error) {
+                    throw new Error(result?.error || 'An issue occured while processing the data');
                 }
 
-                // Fixed: Access the first row's column_name
                 if (result?.data && Array.isArray(result?.data) && result?.data?.[0]?.column_name) {
                     console.log('Successfully fetched primary key: ', result?.data?.[0]?.column_name);
                     console.log()
@@ -224,14 +220,13 @@ export class SQLData {
                 const finalResult = await this.dbConn.fetch(`
                     SELECT * FROM ${table_name} ORDER BY ${pk?.data} ${sortType === 'DESC' ? 'DESC' : 'ASC'};
                     `);
-                if (finalResult?.error || finalResult?.errors) {
-                    throw new Error(finalResult?.error || finalResult?.errors || 'An issue occured while processing the data to order table');
+                if (finalResult?.error) {
+                    throw new Error(finalResult?.error || 'An issue occured while processing the data to order table');
                 }
                 if (!Array.isArray(finalResult?.data)) {
                     throw new Error('PSQL result is not readable in array form');
                 }
 
-                // Update the rows with sorted data
                 this.tablesSQL[table_name].rows = [...finalResult.data];
             }
         } catch (error) {
@@ -240,6 +235,7 @@ export class SQLData {
             console.log('------------------------------------------------------------------');
         }
     }
+
     async getDataByTableNameAndPk(table_name, pk_data) {
         console.log(`Fetching Data by Primary Key for table "${table_name}"`);
         console.log(`- Primary Key Data: `, pk_data);
@@ -251,10 +247,7 @@ export class SQLData {
             const pk_label = await this.getTablePrimaryKey(table_name);
             const columnsInfoRaw = await this.getColumnAndDataType(table_name);
             const columnsInfo = columnsInfoRaw?.data;
-            // console.log('Pk data provided -> ', pk_data);
-            // console.log('Pk label content -> ', pk_label);
-            // console.log('Storage Content -> ', this.tablesSQL[table_name]);
-            // console.log('All Column Info => ', columnsInfo);
+            
             let primaryKey = null;
             columnsInfo?.map((col) => {
                 if (pk_label?.data === col?.column_name) {
@@ -279,11 +272,9 @@ export class SQLData {
                             break;
 
                         default:
-                            // string-based types or fallback
                             primaryKey = String(pk_data);
                             break;
                     }
-                    
                 }
             });
             if(!primaryKey){
@@ -291,7 +282,6 @@ export class SQLData {
             }
             const retVal = this.tablesSQL[table_name]?.rows?.filter(row => row?.[pk_label?.data] === primaryKey) || null;
 
-            
             if (!retVal) {
                 console.log('No Data found');
             } else {
@@ -314,6 +304,7 @@ export class SQLData {
             }
         }
     }
+
     async updateDataByTableNameAndFields(table_name, obj, pk_data) {
         console.log(`Updating data for table "${table_name}" `);
         console.log('------------------------------------------------------------------');
@@ -328,18 +319,29 @@ export class SQLData {
             if (!pk?.data || pk?.error !== '' || !pk_data) {
                 throw new Error('Primary key not found. Aborting table update!');
             }
-            let query = `UPDATE ${table_name} SET `;
-            let setCMD = '';
-            for (let column in obj) {
 
+            // ✅ FIXED: Build parameterized query instead of string concatenation
+            const updateFields = [];
+            const updateValues = [];
+            let paramIndex = 1;
+
+            for (let column in obj) {
                 if (!this.tablesSQL[table_name].columns.includes(column) || column === '' || column === pk?.data) {
                     continue;
                 }
-                setCMD = `${setCMD} ${column} = '${obj[column]}',`
+                updateFields.push(`${column} = $${paramIndex}`);
+                updateValues.push(obj[column]);
+                paramIndex++;
             }
-            setCMD = setCMD.substring(0, setCMD.length - 1)
-            query = `${query}${setCMD} WHERE ${pk?.data} = '${pk_data}';`;
-            await this.dbConn.client.query(query);
+
+            if (updateFields.length === 0) {
+                throw new Error('No valid fields to update');
+            }
+
+            const query = `UPDATE ${table_name} SET ${updateFields.join(', ')} WHERE ${pk?.data} = $${paramIndex}`;
+            updateValues.push(pk_data);
+
+            await this.dbConn.fetch(query, updateValues);
             console.log('Update Success!')
             console.log()
             console.log('------------------------------------------------------------------');
@@ -351,6 +353,7 @@ export class SQLData {
             return false;
         }
     }
+
     async deleteRecordByTableNameAndPk(table_name, pk_data) {
         console.log(`Deleting data for table "${table_name}" `);
         console.log('------------------------------------------------------------------');
@@ -361,7 +364,8 @@ export class SQLData {
             if (pk_label?.data === '' || pk_label?.error !== '') {
                 throw new Error(`No Primary Key found for table "${table_name}"`)
             }
-            await this.dbConn.client.query(`DELETE FROM ${table_name} WHERE ${pk_label?.data} = '${pk_data}'`);
+            // ✅ FIXED: Use parameterized query
+            await this.dbConn.fetch(`DELETE FROM ${table_name} WHERE ${pk_label?.data} = $1`, [pk_data]);
             console.log('Deletion success!');
             console.log()
             console.log('------------------------------------------------------------------');
@@ -373,10 +377,10 @@ export class SQLData {
             return false;
         }
     }
+
     async getColumnAndDataType(table_name) {
         console.log(`Fetching columns names,data types, nullable, and columns default for table "${table_name}"`);
         console.log('------------------------------------------------------------------');
-
 
         try {
             if (!(table_name in this.tablesSQL)) {
@@ -385,6 +389,7 @@ export class SQLData {
             if (!this.dbConn || this.dbConn.status !== true) {
                 throw new Error('Database is not set up or connected');
             }
+            // ✅ FIXED: Use parameterized query
             const result = await this.dbConn.fetch(`SELECT 
                                                         column_name,
                                                         data_type,
@@ -393,9 +398,9 @@ export class SQLData {
                                                     FROM 
                                                         information_schema.columns
                                                     WHERE 
-                                                        table_schema = 'public'  -- or whatever schema you're using
-                                                        AND table_name = '${table_name}';
-                                                    `);
+                                                        table_schema = 'public'
+                                                        AND table_name = $1;
+                                                    `, [table_name]);
             if (!result?.data || !Array.isArray(result?.data)) {
                 throw new Error(`No columns found for table "${table_name}"`);
             }
@@ -410,13 +415,13 @@ export class SQLData {
             return { data: null, error: error };
         }
     }
+
     async createRecord(table_name, data) {
-        console.log(`Updating data for table "${table_name}" `);
+        console.log(`Creating data for table "${table_name}" `);
         console.log('------------------------------------------------------------------');
         console.log('- POST Request data body: ', data);
         console.log();
         try {
-
             const resultCol = await this.getColumnAndDataType(table_name);
             const columnsObj = resultCol?.data;
             if (!columnsObj || !Array.isArray(columnsObj) || columnsObj.length < 1) {
@@ -428,48 +433,50 @@ export class SQLData {
                 let push = pk?.data && value.column_name === pk?.data ? false : true;
                 if (push) return value.column_name;
                 return '';
-            });
+            }).filter(Boolean);
+
             if (!columnsName || !Array.isArray(columnsName) || columnsName.length < 1) {
-                throw new error('No valid column in table');
+                throw new Error('No valid column in table');
             }
+
             const columnForOp = [];
             const dataOp = [];
+            let paramIndex = 1;
+
             for (const column_name_key in data) {
                 if (column_name_key !== 'successRedirectURL') {
                     if (column_name_key === '' || !columnsName.includes(column_name_key)) {
                         throw new Error(`Column "${column_name_key}" not found`);
                     }
                     columnForOp.push(column_name_key);
-                    dataOp.push(`'${data[column_name_key]}'`);
+                    dataOp.push(`$${paramIndex}`);
+                    paramIndex++;
                 } else {
                     console.log(` - Skipping key ${column_name_key}`);
                 }
-
-
             }
 
-            let columnDeclaration = `INSERT INTO ${table_name} (${columnForOp?.join(',')})`;
-            let insertDeclaration = `VALUES (${dataOp.join(',')}) RETURNING *;`;
+            // ✅ FIXED: Build parameterized query
+            const columnDeclaration = `INSERT INTO ${table_name} (${columnForOp.join(',')})`;
+            const insertDeclaration = `VALUES (${dataOp.join(',')}) RETURNING *;`;
+            const query = `${columnDeclaration} ${insertDeclaration}`;
 
-            const result = await this.dbConn.client.query(`
-                ${columnDeclaration} ${insertDeclaration}
-                `);
-            if (!result?.command || !result?.rowCount || result?.rowCount < 1) {
-                throw new Error(`SQL Insert failed. Details of OP: "${result}"`);
+            // ✅ FIXED: Get values in correct order
+            const values = columnForOp.map(col => data[col]);
+
+            const result = await this.dbConn.fetch(query, values);
+            
+            // ✅ FIXED: Check result.data instead of result.command/rowCount
+            if (!result?.data || !Array.isArray(result?.data) || result?.data?.length < 1) {
+                throw new Error(`SQL Insert failed. Details: ${JSON.stringify(result)}`);
             }
-            const retVal = result?.rows;
-            if (!retVal || !Array.isArray(retVal) || retVal.length < 1) {
-                console.log('failed to retrieve newly created record');
-                console.log()
-                console.log('------------------------------------------------------------------');
-                return { data: null, error: '', success: true };
-            }
+
+            const retVal = result?.data;
             console.log('- Create record success!');
             console.log('- Info => ', retVal?.[0]);
             console.log()
             console.log('------------------------------------------------------------------');
             return { data: retVal?.[0]?.[pk?.data], error: '', success: true };
-
 
         } catch (error) {
             console.error('Create record failed: ', error);
