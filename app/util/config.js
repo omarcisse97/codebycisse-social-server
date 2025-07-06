@@ -44,7 +44,7 @@ export const ModuleSync = async () => {
     const findFiles = (dir) => {
         try {
             const files = fs.readdirSync(dir);
-            
+
             files.forEach(file => {
                 const fullPath = path.join(dir, file);
                 const stats = fs.statSync(fullPath);
@@ -66,18 +66,18 @@ export const ModuleSync = async () => {
         let moduleLog = await getModulesLog();
 
         for (let i in matchedFiles) {
-            
+
             const tempStr = matchedFiles[i].replace(`file://${basePath.replace(/\\/g, '/')}`, '');
-            
+
             const tempArr = tempStr.split('/');
             const moduleName = tempArr[1];
 
             try {
                 const { default: Registration } = await import(matchedFiles[i]);
                 const tempModule = Registration();
-                
-                moduleLog[moduleName] = tempModule; 
-                
+
+                moduleLog[moduleName] = tempModule;
+
             } catch (err) {
                 console.error(`Could not load the module from ${matchedFiles[i]}:`, err);
             }
@@ -98,14 +98,14 @@ DB_PORT=5432
  */
 export const appConfig = () => {
     dotenv.config();
-    return{
+    return {
         SERVER: process.env.SERVER,
         DATABASES: {
-            PSQL: process.env.POSTGRES
+            PSQL: process.env.POSTGRES,
+            DEFAULT: process.env.DEFAULT_DB
         },
         SECRET: process.env.ADMIN_SECRET,
         VERSION: process.env.APP_VERSION,
         NAME: process.env.APP_NAME
-        
     }
 }
